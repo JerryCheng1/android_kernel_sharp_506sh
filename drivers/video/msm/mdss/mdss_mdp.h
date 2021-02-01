@@ -55,7 +55,12 @@
 #define C0_G_Y		0	/* G/luma */
 
 /* wait for at most 2 vsync for lowest refresh rate (24hz) */
+#ifdef CONFIG_SHDISP /* CUST_ID_00066 */
+#define KOFF_TIMEOUT_TIME (84)
+#define KOFF_TIMEOUT msecs_to_jiffies(KOFF_TIMEOUT_TIME)
+#else   /* CONFIG_SHDISP */
 #define KOFF_TIMEOUT msecs_to_jiffies(84)
+#endif /* CONFIG_SHDISP */
 
 #define OVERFETCH_DISABLE_TOP		BIT(0)
 #define OVERFETCH_DISABLE_BOTTOM	BIT(1)

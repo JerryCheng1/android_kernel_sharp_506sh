@@ -30,6 +30,9 @@
 #define CMD_MODE_IDLE_TIMEOUT msecs_to_jiffies(16 * 4)
 #define INPUT_EVENT_HANDLER_DELAY_USECS (16000 * 4)
 #define AUTOREFRESH_MAX_FRAME_CNT 6
+#ifdef CONFIG_SHDISP /* CUST_ID_00066 */
+#define WAIT_PINGPONG_RETRY 100
+#endif /* CONFIG_SHDISP */
 
 static DEFINE_MUTEX(cmd_clk_mtx);
 
@@ -1603,6 +1606,13 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 	struct mdss_panel_data *pdata;
 	unsigned long flags;
 	int rc = 0;
+#ifdef CONFIG_SHDISP /* CUST_ID_00066 */
+	s64 timeout = 0;
+	s64 current_time = 0;
+	s64 start_time = 0;
+	int i = 0;
+	int diff = 0;
+#endif /* CONFIG_SHDISP */
 
 	ctx = (struct mdss_mdp_cmd_ctx *) ctl->intf_ctx[MASTER_CTX];
 	if (!ctx) {
@@ -1618,9 +1628,39 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 	pr_debug("%s: intf_num=%d ctx=%p koff_cnt=%d\n", __func__,
 			ctl->intf_num, ctx, atomic_read(&ctx->koff_cnt));
 
+#ifdef CONFIG_SHDISP /* CUST_ID_00066 */
+	start_time = ktime_to_ms(ktime_get());
+	timeout = start_time + KOFF_TIMEOUT_TIME;
+	MDSS_XLOG(ctl->num, jiffies>>32, jiffies);
+
+	for (i=0; i<WAIT_PINGPONG_RETRY; i++) {
+		rc = wait_event_timeout(ctx->pp_waitq,
+				atomic_read(&ctx->koff_cnt) == 0,
+				KOFF_TIMEOUT);
+		if (rc != 0) {
+			break;
+		}
+		if (atomic_read(&ctx->koff_cnt) == 0) {
+			rc = 1;
+			break;
+		}
+		current_time = ktime_to_ms(ktime_get());
+		if (current_time >= timeout) {
+			MDSS_XLOG(ctl->num, jiffies>>32, jiffies);
+			pr_err("%s: wait_event_timeout timeout.", __func__);
+			break;
+		}
+		diff = (int)(current_time-start_time);
+		MDSS_XLOG(ctl->num, jiffies>>32, jiffies, diff);
+		pr_warn("%s: incorrect jiffies. wait retry. diff=%d", __func__, diff);
+	}
+	pr_debug("%s: rc=%d current time=%lld start time=%lld retry=%d", 
+		__func__, rc, current_time, start_time, i);
+#else /* CONFIG_SHDISP */
 	rc = wait_event_timeout(ctx->pp_waitq,
 			atomic_read(&ctx->koff_cnt) == 0,
 			KOFF_TIMEOUT);
+#endif /* CONFIG_SHDISP */
 
 	trace_mdp_cmd_wait_pingpong(ctl->num,
 				atomic_read(&ctx->koff_cnt));
